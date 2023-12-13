@@ -2,68 +2,6 @@ from typing import List, Tuple, Dict
 import sys
 import numpy as np
 np.set_printoptions(threshold=sys.maxsize)
-
-
-from scipy.spatial.distance import mahalanobis
-
-MGC_NUM_ROTATIONS = {"T": 0, "R": 1, "D": 2, "L": 3}
-def mgc(image1, image2, orientation):
-    """
-    Calculate the Mahalanobis Gradient Compatibility (MGC) of image 1 relative
-    to image 2. MGC provides a measure of the similarity in gradient
-    distributions between the boundaries of adjoining images with respect to
-    a particular orientation. For detailed information on the underlying,
-    please see Gallagher et al. (2012).
-
-    Orientations are integers, defined according to Yu et al. (2015):
-    - 0: measure MGC between the top of image 1 and bottom of image 2;
-    - 1: measure MGC between the right of image 1 and left of image 2;
-    - 2: measure MGC between the bottom of image 1 and top of image 2;
-    - 3: measure MGC between the left of image 1 and right of image 2;
-
-    Both images are first rotated into position according to the specified
-    orientations, such that the right side of image 1 and the left side of
-    image 2 are the boundaries of interest. This preprocessing step simplifies
-    the subsequent calculation of the MGC, but increases computation time.
-    Therefore, a straightforward optimisation would be to extract boundary
-    sequences directly.
-
-    NOTE: nomenclature taken from Gallagher et al. (2012).
-
-    :param orientation: orientation image 1 relative to image 2.
-    :param image1: first image.
-    :param image2: second image.
-    :return MGC.
-    """
-    # assert image1.shape == image2.shape, 'images must be of same dimensions'
-    # assert orientation in MGC_NUM_ROTATIONS, 'invalid orientation'
-
-    num_rotations = MGC_NUM_ROTATIONS[orientation]
-
-    # Rotate images based on orientation - this is easier than extracting
-    # the sequences based on an orientation case switch
-    # print("image1.shape", image1.shape, image1)
-    image1_signed = np.rot90(image1.image, num_rotations).astype(np.int16)
-    image2_signed = np.rot90(image2.image, num_rotations).astype(np.int16)
-
-    # Get mean gradient of image1
-
-    g_i_l = image1_signed[:, -1] - image1_signed[:, -2]
-    mu = g_i_l.mean(axis=0)
-
-    # Get covariance matrix S
-    # Small values are added to the diagonal of S to resolve non-invertibility
-    # of S. This will not influence the final result.
-
-    s = np.cov(g_i_l.T) + np.eye(3) * 10e-6
-
-    # Get G_ij_LR
-
-    g_ij_lr = image2_signed[:, 1] - image1_signed[:, -1]
-
-    return sum(mahalanobis(row, mu, np.linalg.inv(s)) for row in g_ij_lr)
-
-
 class Piece(object):
     """Represents single jigsaw puzzle piece.
 
@@ -96,21 +34,6 @@ class Piece(object):
         return self.image.shape
 
 def dissimilarity_measure(first_piece, second_piece, orientation):
-    # def compute_mgc_distances(images, pairwise_matches):
-    # """
-    # Compute MGC distances for all specified images and their pairwise matches.
-
-    # :param images: list of images.
-    # :param pairwise_matches: list of (image index 1, image index 2, orientation)
-    #  tuples.
-    # :return: dictionary with tuples from pairwise_matches as keys, and their
-    # resulting MGCs as values.
-    # """
-    # return {(i, j, o): mgc(images[i], images[j], o) for
-    #         i, j, o in pairwise_matches}
-    
-    return mgc(first_piece, second_piece, orientation[0]), mgc(second_piece, first_piece, orientation[1])
-
     rows, columns, _ = first_piece.shape()
     color_difference = None
 
@@ -134,7 +57,9 @@ def dissimilarity_measure(first_piece, second_piece, orientation):
     total_difference = np.sum(color_difference_per_row, axis=0)
 
     value = np.sqrt(total_difference)
-    return value
+    return (value**3)
+    return int(1e5/value)
+    return (value**3)*1000
 
 def flatten_image(image, piece_size, indexed=False):
     """Converts image into list of square pieces.
@@ -202,29 +127,22 @@ class ImageAnalysis(object):
 
         def update_best_match_table(first_piece, second_piece):
             measure = dissimilarity_measure(first_piece, second_piece, orientation)
-            # print("measure", measure)
-            # cls.put_dissimilarity(
-            #     (first_piece.id, second_piece.id), orientation, measure
-            # )
-            # cls.best_match_table[first_piece.id][orientation].append(
-            #     (second_piece.id, measure)
-            # )
-                
-            cls.best_match_table[second_piece.id][orientation[1]].append(
-                (first_piece.id, measure[1])
+            cls.put_dissimilarity(
+                (first_piece.id, second_piece.id), orientation, measure
+            )
+        
+            cls.best_match_table[second_piece.id][orientation[0]].append(
+                (first_piece.id, measure)
             )
             
-            cls.best_match_table[first_piece.id][orientation[0]].append(
-                (second_piece.id, measure[0])
+            cls.best_match_table[first_piece.id][orientation[1]].append(
+                (second_piece.id, measure)
             )
 
         # Calculate dissimilarity measures and best matches for each piece.
         iterations = len(pieces) - 1
         for first in range(iterations):
             for second in range(first + 1, len(pieces)):
-                # for orientation in ["L", "D", "R", "T"]:
-                #     update_best_match_table(pieces[first], pieces[second])
-                #     # update_best_match_table(pieces[second], pieces[first])
                 for orientation in ["LR", "TD"]:
                     update_best_match_table(pieces[first], pieces[second])
                     update_best_match_table(pieces[second], pieces[first])
@@ -235,24 +153,24 @@ class ImageAnalysis(object):
 
         return dict(sorted(cls.best_match_table.items()))
 
-    # @classmethod
-    # def put_dissimilarity(cls, ids, orientation, value):
-    #     """Puts a new value in lookup table for given pieces
+    @classmethod
+    def put_dissimilarity(cls, ids, orientation, value):
+        """Puts a new value in lookup table for given pieces
 
-    #     :params ids:         Identfiers of puzzle pieces
-    #     :params orientation: Orientation of puzzle pieces. Possible values are:
-    #                          'LR' => 'Left-Right'
-    #                          'TD' => 'Top-Down'
-    #     :params value:       Value of dissimilarity measure
+        :params ids:         Identfiers of puzzle pieces
+        :params orientation: Orientation of puzzle pieces. Possible values are:
+                             'LR' => 'Left-Right'
+                             'TD' => 'Top-Down'
+        :params value:       Value of dissimilarity measure
 
-    #     Usage::
+        Usage::
 
-    #         >>> from gaps.image_analysis import ImageAnalysis
-    #         >>> ImageAnalysis.put_dissimilarity([1, 2], "TD", 42)
-    #     """
-    #     if ids not in cls.dissimilarity_measures:
-    #         cls.dissimilarity_measures[ids] = {}
-    #     cls.dissimilarity_measures[ids][orientation] = value
+            >>> from gaps.image_analysis import ImageAnalysis
+            >>> ImageAnalysis.put_dissimilarity([1, 2], "TD", 42)
+        """
+        if ids not in cls.dissimilarity_measures:
+            cls.dissimilarity_measures[ids] = {}
+        cls.dissimilarity_measures[ids][orientation] = value
 
     @classmethod
     def get_dissimilarity(cls, ids, orientation):
@@ -307,7 +225,7 @@ class LP(object):
 
         best_match_table = ImageAnalysis.analyze_image(self._pieces)
         
-        
+        n = len(best_match_table)
         DELTA_X = [0, -1, 0, 1]
         DELTA_Y = [1, 0, -1, 0]
         
@@ -316,13 +234,147 @@ class LP(object):
         ROTATION_MAP = {"T": 2, "R": 3, "D": 0, "L": 1}
         
         
+        # """Minimal CP-SAT example to showcase calling the solver."""
+        # # Creates the model.
+        # model = cp_model.CpModel()
+
+        # # Creates the variables.
+        # # var_upper_bound = max(50, 45, 37)
+        # # x = model.NewIntVar(0, 2, "x")
+        # # y = model.NewIntVar(0, 2, "y")
+        # # z = model.NewIntVar(0, 2, "z")
+        # # locations = []
+        # # for i in range(n):
+        # #     locations.append(model.NewIntVar(0, n-1, "location_" + str(i)))
+        #     # locations.append(solver.IntVar(0, n-1, "location_" + str(i)))
+
+        # x_mat = [None for _ in range(n)]
+        # y_mat = [None for _ in range(n)]
+        # for i, first_piece in enumerate(best_match_table):
+        #     x_mat[first_piece] = model.NewIntVar(0, self.rows - 1, "x_" + str(first_piece))
+        #     y_mat[first_piece] = model.NewIntVar(0, self.columns - 1, "y_" + str(first_piece))
+        # # m_sum = model.NewIntVar(0, , "sum")
+        
+        # weight_ijo = [[{} for _ in range(n)] for _ in range(n)]
+        # for i, first_piece in enumerate(best_match_table):
+        #     # x_mat[first_piece] = model.NewIntVar(0, self.rows - 1, "x_" + str(first_piece))
+        #     # y_mat[first_piece] = model.NewIntVar(0, self.columns - 1, "y_" + str(first_piece))
+        #     # x_mat[first_piece] = solver.IntVar(0, self.rows - 1, "x_" + str(first_piece))
+        #     # y_mat[first_piece] = solver.IntVar(0, self.columns - 1, "y_" + str(first_piece))
+            
+        #     for orientation in best_match_table[first_piece]:  
+        #         # weight_ijo[first_piece][first_piece][orientation] = 1e7         
+        #         for j, second_piece in enumerate(best_match_table[first_piece][orientation]):
+        #             weight_ijo[first_piece][second_piece[0]][orientation] = int(1e8/second_piece[1])
+        # print(weight_ijo)
+        # # higher weight means more similar
+        # sigma_o_x = {"T": 0, "R": -1, "D": 0, "L": 1}
+        # sigma_o_y = {"T": self.columns, "R": 0, "D": -self.columns, "L": 0}
+        # # iterate through pieces
+        # # for i in range(n):
+        # #     for o in ['T', 'R', 'D', 'L']:
+        # #         for j in range(n):
+        # #             if i == j:
+        # #                 continue
+        # #             weight = weight_ijo[i][j][o]
+        # #     for j in range(n):
+        # #         if i == j:
+        # #             continue
+        # #         dissimilarity_all_orientations = weight_ijo[i][j]
+        # #         for orientation in dissimilarity_all_orientations:
+        # #             distance = locations[i] - locations[j]
+        # #             if orientation == 'L' or orientation == 'R':
+        # #                 distance = distance - sigma_o_x[orientation]
+        # #             elif orientation == 'T' or orientation == 'D':
+        # #                 distance = distance - sigma_o_y[orientation]
+        # #             abs_distance = model.NewIntVar(0, n, "location_" + str(i))
+        # #             # model.Add(abs_distance >= distance)
+        # #             # model.Add(abs_distance >= -distance)
+        # #             m_sum = m_sum + abs_distance * weight_ijo[i][j][orientation]
+        # # for loc in locations:
+        # #     m_sum = m_sum + loc
+        # # # Creates the constraints.
+        # # model.Add(2 * x + 7 * y + 3 * z <= 50)
+        # # model.Add(3 * x - 5 * y + 7 * z <= 45)
+        # # model.Add(5 * x + 2 * y - 6 * z <= 37)
+        
+        
+                    
+                    
+        # locations = [None for _ in range(n)]
+        # # for i in range(self.rows):
+        # #     for j in range(self.columns):
+        # for i in range(n):
+        #     locations[i] = x_mat[i] * self.columns + y_mat[i]
+        
+        # model.AddAllDifferent(locations)
+        
+        # # for loc in locations:
+        # #     m_sum = m_sum + loc
+
+        # model.Minimize(locations[0])
+
+        # # Creates a solver and solves the model.
+        # solver = cp_model.CpSolver()
+        # status = solver.Solve(model)
+
+        # locations_result = []
+        # if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+        #     print(f"Maximum of objective function: {solver.ObjectiveValue()}\n")
+        #     for loc in locations:
+        #         print(f"location = {solver.Value(loc)}")
+        #         locations_result.append(solver.Value(loc))
+        #     # print(f"x = {solver.Value(x)}")
+        #     # print(f"y = {solver.Value(y)}")
+        #     # print(f"z = {solver.Value(z)}")
+        # else:
+        #     print("No solution found.")
+
+        # # Statistics.
+        # print("\nStatistics")
+        # print(f"  status   : {solver.StatusName(status)}")
+        # print(f"  conflicts: {solver.NumConflicts()}")
+        # print(f"  branches : {solver.NumBranches()}")
+        # print(f"  wall time: {solver.WallTime()} s")
+        
+        # x = []
+        # y = []
+        
+        # print("self.rows", self.rows)
+        # print("self.columns", self.columns)
+        # for i in range(n):
+        #     x.append(locations_result[i] // self.columns)
+        #     y.append(locations_result[i] % self.columns)
+        
+        # print("x", x)
+        # print("y", y)
+        
+        # canvas = np.zeros((self.rows*self._piece_size, self.columns*self._piece_size, 3), dtype=np.uint8)
+
+        # xs = np.array(x, dtype=np.int32)
+        # ys = np.array(y, dtype=np.int32)
+        
+        # for piece, (x, y) in zip(self._pieces, zip(xs, ys)):
+        #     sx, sy, dx, dy = x * self._piece_size, y * self._piece_size, (x + 1) * self._piece_size, (y + 1) * self._piece_size
+        #     # print(canvas[sy:dy, sx:dx, :].shape)
+        #     # canvas[sy:dy, sx:dx, :] = piece.image
+        #     canvas[sx:dx, sy:dy, :] = piece.image
+        # return canvas
+    
+    
+        # exit(0)
+
+
+
+        
+        
         
         # # solver = pywrapcp.Solver('Jigsaw')
         # # solver = cp_model.CpSolver()
         # # model = cp_model.CpModel()
-        # # solver = pywraplp.Solver.CreateSolver("SAT")
+        # solver = pywraplp.Solver.CreateSolver("SAT")
         # # model = cp_model.CpModel()
-        # model = pywrapcp.Solver("Jigsaw")
+        # # model = pywrapcp.Solver("Jigsaw")
 
 
         # n = len(best_match_table)
@@ -336,16 +388,17 @@ class LP(object):
         # locations = []
         # for i in range(n):
         #     # locations.append(model.NewIntVar(0, n-1, "location_" + str(i)))
-        #     locations.append(model.IntVar(0, n-1, "location_" + str(i)))
+        #     locations.append(solver.IntVar(0, n-1, "location_" + str(i)))
         
-        # # model.AddAllDifferent(locations)
-        # model.Add(model.AllDifferent(locations))
-        #     # locations.append(solver.IntVar(0, n-1, "location_" + str(i)))
+        # # # model.AddAllDifferent(locations)
+        # # solver.Add(solver.AllDifferent(locations))
+        # #     # locations.append(solver.IntVar(0, n-1, "location_" + str(i)))
         # for i, first_piece in enumerate(best_match_table):
         #     # x_mat[first_piece] = model.NewIntVar(0, self.rows - 1, "x_" + str(first_piece))
         #     # y_mat[first_piece] = model.NewIntVar(0, self.columns - 1, "y_" + str(first_piece))
         #     # x_mat[first_piece] = solver.IntVar(0, self.rows - 1, "x_" + str(first_piece))
         #     # y_mat[first_piece] = solver.IntVar(0, self.columns - 1, "y_" + str(first_piece))
+            
         #     for orientation in best_match_table[first_piece]:  
         #         # weight_ijo[first_piece][first_piece][orientation] = 1e7         
         #         for j, second_piece in enumerate(best_match_table[first_piece][orientation]):
@@ -361,72 +414,76 @@ class LP(object):
         # abs_diff_y_w = [[None for _ in range(n)] for _ in range(n)]
         # abs_diff_x = [[None for _ in range(n)] for _ in range(n)]
         # abs_diff_y = [[None for _ in range(n)] for _ in range(n)]
-        # for i in range(n):
-        #     for j in range(n):
-        #         if not i == j:
-        #             for o in ['T', 'R', 'D', 'L']:
-        #                 # abs_diff_x_w[i][j] = model.NewIntVar(-self.rows + 1, self.rows - 1, "abs_diff_x_" + str(i) + "_" + str(j) + "_" + str(o))
-        #                 # abs_diff_y_w[i][j] = model.NewIntVar(-self.columns + 1, self.columns - 1, "abs_diff_y_" + str(i) + "_" + str(j) + "_" + str(o))
-        #                 abs_diff_x_w[i][j] = model.IntVar(0, self.rows, "abs_diff_x_w_" + str(i) + "_" + str(j) + "_" + str(o))
-        #                 abs_diff_y_w[i][j] = model.IntVar(0, self.columns, "abs_diff_y_w_" + str(i) + "_" + str(j) + "_" + str(o))
-        #                 # weight_ijo = solver.FloarVar()
-        #                 # weight_ijo.set(weight_ijo[i][j][o])
-        #                 print("weight_ijo[i][j][o]", weight_ijo[i][j][o])
-        #                 weights_x_sum.append(abs_diff_x_w[i][j] * int(weight_ijo[i][j][o]))
-        #                 weights_y_sum.append(abs_diff_y_w[i][j] * int(weight_ijo[i][j][o]))
-        #                 # weights_x_sum.append((x_mat[i] - x_mat[j] - sigma_o_x[o]) * weight_ijo[i][j][o])
-        #                 # weights_y_sum.append((y_mat[i] - y_mat[j] - sigma_o_y[o]) * weight_ijo[i][j][o])
+        # # for i in range(n):
+        # #     for j in range(n):
+        # #         if not i == j:
+        # #             for o in ['T', 'R', 'D', 'L']:
+        # #                 # abs_diff_x_w[i][j] = model.NewIntVar(-self.rows + 1, self.rows - 1, "abs_diff_x_" + str(i) + "_" + str(j) + "_" + str(o))
+        # #                 # abs_diff_y_w[i][j] = model.NewIntVar(-self.columns + 1, self.columns - 1, "abs_diff_y_" + str(i) + "_" + str(j) + "_" + str(o))
+        # #                 abs_diff_x_w[i][j] = solver.IntVar(0, self.rows, "abs_diff_x_w_" + str(i) + "_" + str(j) + "_" + str(o))
+        # #                 abs_diff_y_w[i][j] = solver.IntVar(0, self.columns, "abs_diff_y_w_" + str(i) + "_" + str(j) + "_" + str(o))
+        # #                 # weight_ijo = solver.FloarVar()
+        # #                 # weight_ijo.set(weight_ijo[i][j][o])
+        # #                 print("weight_ijo[i][j][o]", weight_ijo[i][j][o])
+        # #                 weights_x_sum.append(abs_diff_x_w[i][j] * int(weight_ijo[i][j][o]))
+        # #                 weights_y_sum.append(abs_diff_y_w[i][j] * int(weight_ijo[i][j][o]))
+        # #                 # weights_x_sum.append((x_mat[i] - x_mat[j] - sigma_o_x[o]) * weight_ijo[i][j][o])
+        # #                 # weights_y_sum.append((y_mat[i] - y_mat[j] - sigma_o_y[o]) * weight_ijo[i][j][o])
                     
         # # # divide = 1.0/self.rows
         # for i in range(n):
         #     for j in range(i+1, n):
         #         if not i == j:
-        #             for o in ['T', 'R', 'D', 'L']:
-        #                 # pass
-        #                 # print("i, j, o", i, j, o)
-        #                 # print(x_mat[i], x_mat[j], sigma_o_x[o])
-        #                 # model.Add(abs_diff_x_w[i][j] >= locations[i] - locations[j] - sigma_o_x[o])
-        #                 # model.Add(abs_diff_x_w[i][j] >= -locations[i] + locations[j] + sigma_o_x[o])
+        #             solver.Add((locations[i] == locations[j]) == 0)
+        #         #     for o in ['T', 'R', 'D', 'L']:
+        #         #         # pass
+        #         #         # print("i, j, o", i, j, o)
+        #         #         # print(x_mat[i], x_mat[j], sigma_o_x[o])
+        #         #         # model.Add(abs_diff_x_w[i][j] >= locations[i] - locations[j] - sigma_o_x[o])
+        #         #         # model.Add(abs_diff_x_w[i][j] >= -locations[i] + locations[j] + sigma_o_x[o])
                         
-        #                 # model.Add(abs_diff_y_w[i][j] >= locations[i] - locations[j] - sigma_o_y[o])
-        #                 # model.Add(abs_diff_y_w[i][j] >= -locations[i] + locations[j] + sigma_o_y[o])
-        #                 pass
-        #                 # # solver.Add(abs_diff_x_w[i][j] >= 1)
-        #                 # model.Add(abs_diff_y_w[i][j] >= y_mat[i] - y_mat[j] - sigma_o_y[o])
-        #                 # model.Add(abs_diff_y_w[i][j] >= -y_mat[i] + y_mat[j] + sigma_o_y[o])
+        #         #         # model.Add(abs_diff_y_w[i][j] >= locations[i] - locations[j] - sigma_o_y[o])
+        #         #         # model.Add(abs_diff_y_w[i][j] >= -locations[i] + locations[j] + sigma_o_y[o])
+        #         #         # pass
+        #         #         # # solver.Add(abs_diff_x_w[i][j] >= 1)
+        #         #         # model.Add(abs_diff_y_w[i][j] >= y_mat[i] - y_mat[j] - sigma_o_y[o])
+        #         #         # model.Add(abs_diff_y_w[i][j] >= -y_mat[i] + y_mat[j] + sigma_o_y[o])
                         
-        #                 # model.Add(abs_diff_x_w[i][j] >= x_mat[i] - x_mat[j] - sigma_o_x[o])
-        #                 # model.Add(abs_diff_x_w[i][j] >= -x_mat[i] + x_mat[j] + sigma_o_x[o])
-        #                 # # solver.Add(abs_diff_x_w[i][j] >= 1)
-        #                 # model.Add(abs_diff_y_w[i][j] >= y_mat[i] - y_mat[j] - sigma_o_y[o])
-        #                 # model.Add(abs_diff_y_w[i][j] >= -y_mat[i] + y_mat[j] + sigma_o_y[o])
-        #                 # solver.Add(abs_diff_x_w[i][j] >= x_mat[i] - x_mat[j] - sigma_o_x[o])
-        #                 # solver.Add(abs_diff_x_w[i][j] >= -x_mat[i] + x_mat[j] + sigma_o_x[o])
-        #                 # # solver.Add(abs_diff_x_w[i][j] >= 1)
-        #                 # solver.Add(abs_diff_y_w[i][j] >= y_mat[i] - y_mat[j] - sigma_o_y[o])
-        #                 # solver.Add(abs_diff_y_w[i][j] >= -y_mat[i] + y_mat[j] + sigma_o_y[o])
-        #         # print("i, j", i, j)
-        #         # solver.Add((x_mat[i] == x_mat[j] and y_mat[i] == y_mat[j]) == 0)
+        #         #         # model.Add(abs_diff_x_w[i][j] >= x_mat[i] - x_mat[j] - sigma_o_x[o])
+        #         #         # model.Add(abs_diff_x_w[i][j] >= -x_mat[i] + x_mat[j] + sigma_o_x[o])
+        #         #         # # solver.Add(abs_diff_x_w[i][j] >= 1)
+        #         #         # model.Add(abs_diff_y_w[i][j] >= y_mat[i] - y_mat[j] - sigma_o_y[o])
+        #         #         # model.Add(abs_diff_y_w[i][j] >= -y_mat[i] + y_mat[j] + sigma_o_y[o])
+        #         #         solver.Add(abs_diff_x_w[i][j] >= x_mat[i] - x_mat[j] - sigma_o_x[o])
+        #         #         solver.Add(abs_diff_x_w[i][j] >= -x_mat[i] + x_mat[j] + sigma_o_x[o])
+        #         #         # solver.Add(abs_diff_x_w[i][j] >= 1)
+        #         #         solver.Add(abs_diff_y_w[i][j] >= y_mat[i] - y_mat[j] - sigma_o_y[o])
+        #         #         solver.Add(abs_diff_y_w[i][j] >= -y_mat[i] + y_mat[j] + sigma_o_y[o])
+        #         # # print("i, j", i, j)
+        #             # solver.Add((x_mat[i] == x_mat[j] and y_mat[i] == y_mat[j]) == 0)
+        #             # solver.Add((x_mat[i] == x_mat[j] and y_mat[i] == y_mat[j]) == 0)
         #         # model.Add((x_mat[i] == x_mat[j] and y_mat[i] == y_mat[j]) == 0)
         
-        # db = model.Phase(locations, model.CHOOSE_FIRST_UNBOUND, model.ASSIGN_MIN_VALUE) #model.CHOOSE_FIRST_UNBOUND, model.ASSIGN_MIN_VALUE
+        # # db = model.Phase(locations, model.CHOOSE_FIRST_UNBOUND, model.ASSIGN_MIN_VALUE) #model.CHOOSE_FIRST_UNBOUND, model.ASSIGN_MIN_VALUE
 
-        # # Iterates through the solutions, displaying each.
-        # num_solutions = 0
-        # model.NewSearch(db)
-        # while model.NextSolution():
-        #     print("Solution", num_solutions, '\n')
-        #     # Displays the solution just computed.
-        #     for location in locations:
-        #         print(location.Value())
-        #     num_solutions += 1
-        # model.EndSearch()
+        # # # Iterates through the solutions, displaying each.
+        # # num_solutions = 0
+        # # model.NewSearch(db)
+        # # while model.NextSolution():
+        # #     print("Solution", num_solutions, '\n')
+        # #     # Displays the solution just computed.
+        # #     for location in locations:
+        # #         print(location.Value())
+        # #     num_solutions += 1
+        # # model.EndSearch()
     
         
         # # solver.Minimize(solver.Sum(weights_x_sum + weights_y_sum))
-        # # status = solver.Solve()
+        # print("locations", locations)
         # # solver = cp_model.CpSolver()
-        # # # solver.Minimize(solver.Sum(x_mat + y_mat))
+        # solver.Minimize(solver.Sum(locations))
+        # # solver.Maximize(solver.Sum(x_mat + y_mat))
+        # status = solver.Solve()
         # # status = solver.Solve(model)
 
 
@@ -446,13 +503,15 @@ class LP(object):
         # #     print(x_i.solution_value())
         # # for y_i in y_mat:
         # #     print(y_i.solution_value())
-        # # if status == pywraplp.Solver.OPTIMAL:
-        # #     print("Solution:")
-        # #     print("Objective value =", solver.Objective().Value())
-        # #     for x_i in x_mat:
-        # #         print(x_i.solution_value())
-        # #     for y_i in y_mat:
-        # #         print(y_i.solution_value())
+        # if status == pywraplp.Solver.OPTIMAL:
+        #     print("Solution:")
+        #     print("Objective value =", solver.Objective().Value())
+        #     for location in locations:
+        #         print(location.solution_value())
+        #     # for x_i in x_mat:
+        #     #     print(x_i.solution_value())
+        #     # for y_i in y_mat:
+        #     #     print(y_i.solution_value())
         
         # # if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         # #     print(f"Maximum of objective function: {solver.ObjectiveValue()}\n")
@@ -586,8 +645,8 @@ class LP(object):
             # oriented pairs (i, j, o).
 
             Xj = np.zeros(Xi.shape, dtype=np.int32)
-            print("Xj", Xj.shape)
-            print(len(starting_set))
+            # print("Xj", Xj.shape)
+            # print(len(starting_set))
             for piece_item in starting_set:
                 i = piece_item[0]
                 j = piece_item[1]
@@ -642,7 +701,7 @@ class LP(object):
 
             # ... (continue with the rest of your code)
 
-    # solution = linprog(c, A_ub, b_ub, options=options)
+            # solution = linprog(c, A_ub, b_ub, options=options)
 
 
             # Construct coefficients vector c, to be used in the objective function. It
@@ -769,34 +828,36 @@ class LP(object):
             return pieces
         
         x, y = compute_solution(active_selection, init_weights)
-        # # print(x, y)
-        # x_result = []
-        # y_result = []
-        # piece_result = []
-        # matrix_fixed = np.zeros((self.rows, self.columns), dtype=np.int32)
-        # matrix_fixed -= 1
-        # piece_duplicated = []
-        # for idx in range(len(x)):
-        #     if not matrix_fixed[int(x[idx]), int(y[idx])] == -1:
-        #         print("need to find a empty space")
-        #         piece_duplicated.append(idx)
-        #         piece_duplicated.append(matrix_fixed[int(x[idx]), int(y[idx])])
-        #     else:
-        #         matrix_fixed[int(x[idx]), int(y[idx])] = idx
+        # print(x, y)
+        x_result = []
+        y_result = []
+        piece_result = []
+        matrix_fixed = np.zeros((self.rows, self.columns), dtype=np.int32)
+        matrix_fixed -= 1
+        piece_duplicated = []
+        for idx in range(len(x)):
+            if not matrix_fixed[int(x[idx]), int(y[idx])] == -1:
+                print("need to find a empty space")
+                piece_duplicated.append(idx)
+                piece_duplicated.append(matrix_fixed[int(x[idx]), int(y[idx])])
+            else:
+                matrix_fixed[int(x[idx]), int(y[idx])] = idx
         
         
         
         
-        # for i in range(len(x)):
-        #     if i in piece_duplicated:
-        #         x_result.append(0)
-        #         y_result.append(0)
-        #     else:
-        #         x_result.append(x[i])
-        #         y_result.append(y[i])
-        # x, y = x_result, y_result
+        for i in range(len(x)):
+            if i in piece_duplicated:
+                x_result.append(0)
+                y_result.append(0)
+            else:
+                x_result.append(x[i])
+                y_result.append(y[i])
+        x, y = x_result, y_result
         
-        # # x, y = compute_solution(active_selection, init_weights, piece_duplicated)
+        # print("piece_duplicated", piece_duplicated)
+        
+        # x, y = compute_solution(active_selection, init_weights, piece_duplicated)
         
         # while len(piece_result) < self.columns * self.rows:
             
@@ -836,9 +897,9 @@ class LP(object):
         #     #     print("active_selection", len(active_selection))
         #     #     break
             
-        #     rejected_matches = compute_rejected_matches(active_selection, x, y)
-        #     # print("rejected_matches", len(rejected_matches), rejected_matches)
-        #     remove_rejected_matches(rejected_matches, best_match_table, init_weights)
+        #     # rejected_matches = compute_rejected_matches(active_selection, x, y)
+        #     # # print("rejected_matches", len(rejected_matches), rejected_matches)
+        #     # remove_rejected_matches(rejected_matches, best_match_table, init_weights)
                 
         #     # print("rejected_matches", len(active_selection), len(rejected_matches), rejected_matches)
         #     # best_match_table = list(set(best_match_table) - rejected_matches)
@@ -861,7 +922,7 @@ class LP(object):
         #     old_x, old_y = x, y
         #     x, y = compute_solution(active_selection, init_weights)
         #     # return x, y
-        #     # print(x, y)
+        #     print(x, y)
 
 
         canvas = np.zeros((self.rows*self._piece_size, self.columns*self._piece_size, 3), dtype=np.uint8)
