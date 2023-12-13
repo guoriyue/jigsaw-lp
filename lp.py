@@ -210,11 +210,11 @@ class ImageAnalysis(object):
             #     (second_piece.id, measure)
             # )
                 
-            cls.best_match_table[second_piece.id][orientation[0]].append(
+            cls.best_match_table[second_piece.id][orientation[1]].append(
                 (first_piece.id, measure[1])
             )
             
-            cls.best_match_table[first_piece.id][orientation[1]].append(
+            cls.best_match_table[first_piece.id][orientation[0]].append(
                 (second_piece.id, measure[0])
             )
 
@@ -824,44 +824,44 @@ class LP(object):
                 
         # x, y = x_result, y_result
             
-        old_x, old_y = None, None
-        pieces = []
-        while (old_x is None and old_y is None) or not \
-                (np.array_equal(old_x, x) and np.array_equal(old_y, y)):
-        # max_iter = 20
-        # while (len(set(x)) < self.rows - 1 or len(set(y)) < self.columns - 1) and max_iter:
-        #     max_iter -= 1
-            # print(len(active_selection))
-            # if not len(active_selection) == 960:
-            #     print("active_selection", len(active_selection))
-            #     break
+        # old_x, old_y = None, None
+        # pieces = []
+        # while (old_x is None and old_y is None) or not \
+        #         (np.array_equal(old_x, x) and np.array_equal(old_y, y)):
+        # # max_iter = 20
+        # # while (len(set(x)) < self.rows - 1 or len(set(y)) < self.columns - 1) and max_iter:
+        # #     max_iter -= 1
+        #     # print(len(active_selection))
+        #     # if not len(active_selection) == 960:
+        #     #     print("active_selection", len(active_selection))
+        #     #     break
             
-            rejected_matches = compute_rejected_matches(active_selection, x, y)
-            # print("rejected_matches", len(rejected_matches), rejected_matches)
-            remove_rejected_matches(rejected_matches, best_match_table, init_weights)
+        #     rejected_matches = compute_rejected_matches(active_selection, x, y)
+        #     # print("rejected_matches", len(rejected_matches), rejected_matches)
+        #     remove_rejected_matches(rejected_matches, best_match_table, init_weights)
                 
-            # print("rejected_matches", len(active_selection), len(rejected_matches), rejected_matches)
-            # best_match_table = list(set(best_match_table) - rejected_matches)
-            # print("pairwise_matches", len(best_match_table))
-            # prev_active_selection = active_selection
-            active_selection = []
-            # init_weights = []
-            for first_piece in best_match_table:
-                for orientation in best_match_table[first_piece]:
-                    # if selected(first_piece, orientation, active_selection):
-                    #     continue
-                    for second_piece in best_match_table[first_piece][orientation]:
-                        active_selection.append((first_piece, second_piece[0], orientation))
-                        # init_weights.append(second_piece[1])
-                        break
+        #     # print("rejected_matches", len(active_selection), len(rejected_matches), rejected_matches)
+        #     # best_match_table = list(set(best_match_table) - rejected_matches)
+        #     # print("pairwise_matches", len(best_match_table))
+        #     # prev_active_selection = active_selection
+        #     active_selection = []
+        #     # init_weights = []
+        #     for first_piece in best_match_table:
+        #         for orientation in best_match_table[first_piece]:
+        #             # if selected(first_piece, orientation, active_selection):
+        #             #     continue
+        #             for second_piece in best_match_table[first_piece][orientation]:
+        #                 active_selection.append((first_piece, second_piece[0], orientation))
+        #                 # init_weights.append(second_piece[1])
+        #                 break
             
-            # active_selection = compute_active_selection(active_selection,
-            #                                             best_match_table)
-            # print("active_selection", len(active_selection))
-            old_x, old_y = x, y
-            x, y = compute_solution(active_selection, init_weights)
-            # return x, y
-            # print(x, y)
+        #     # active_selection = compute_active_selection(active_selection,
+        #     #                                             best_match_table)
+        #     # print("active_selection", len(active_selection))
+        #     old_x, old_y = x, y
+        #     x, y = compute_solution(active_selection, init_weights)
+        #     # return x, y
+        #     # print(x, y)
 
 
         canvas = np.zeros((self.rows*self._piece_size, self.columns*self._piece_size, 3), dtype=np.uint8)
