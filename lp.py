@@ -58,8 +58,6 @@ def dissimilarity_measure(first_piece, second_piece, orientation):
 
     value = np.sqrt(total_difference)
     return (value**3)
-    return int(1e5/value)
-    return (value**3)*1000
 
 def flatten_image(image, piece_size, indexed=False):
     """Converts image into list of square pieces.
@@ -193,6 +191,7 @@ class ImageAnalysis(object):
     def best_match(cls, piece, orientation):
         """ "Returns best match piece for given piece and orientation"""
         return cls.best_match_table[piece][orientation][0][0]
+
 
 
 from operator import attrgetter
@@ -382,7 +381,7 @@ class LP(object):
         # # n is the total number of pieces
         # x_mat = [None for _ in range(n)]
         # y_mat = [None for _ in range(n)]
-        # weight_ijo = [[{} for _ in range(n)] for _ in range(n)]
+        weight_ijo = [[{} for _ in range(n)] for _ in range(n)]
         # weights_x_sum = []
         # weights_y_sum = []
         # locations = []
@@ -393,16 +392,16 @@ class LP(object):
         # # # model.AddAllDifferent(locations)
         # # solver.Add(solver.AllDifferent(locations))
         # #     # locations.append(solver.IntVar(0, n-1, "location_" + str(i)))
-        # for i, first_piece in enumerate(best_match_table):
-        #     # x_mat[first_piece] = model.NewIntVar(0, self.rows - 1, "x_" + str(first_piece))
-        #     # y_mat[first_piece] = model.NewIntVar(0, self.columns - 1, "y_" + str(first_piece))
-        #     # x_mat[first_piece] = solver.IntVar(0, self.rows - 1, "x_" + str(first_piece))
-        #     # y_mat[first_piece] = solver.IntVar(0, self.columns - 1, "y_" + str(first_piece))
+        for i, first_piece in enumerate(best_match_table):
+            # x_mat[first_piece] = model.NewIntVar(0, self.rows - 1, "x_" + str(first_piece))
+            # y_mat[first_piece] = model.NewIntVar(0, self.columns - 1, "y_" + str(first_piece))
+            # x_mat[first_piece] = solver.IntVar(0, self.rows - 1, "x_" + str(first_piece))
+            # y_mat[first_piece] = solver.IntVar(0, self.columns - 1, "y_" + str(first_piece))
             
-        #     for orientation in best_match_table[first_piece]:  
-        #         # weight_ijo[first_piece][first_piece][orientation] = 1e7         
-        #         for j, second_piece in enumerate(best_match_table[first_piece][orientation]):
-        #             weight_ijo[first_piece][second_piece[0]][orientation] = second_piece[1]
+            for orientation in best_match_table[first_piece]:  
+                # weight_ijo[first_piece][first_piece][orientation] = 1e7         
+                for j, second_piece in enumerate(best_match_table[first_piece][orientation]):
+                    weight_ijo[first_piece][second_piece[0]][orientation] = second_piece[1]
         
         # print("x_mat", x_mat)
         # print("y_mat", y_mat)
@@ -558,6 +557,15 @@ class LP(object):
         # NUM_ROTATIONS = [3, 0, 1, 2]
         # ROTATION_MAP = {"T": 2, "R": 3, "D": 0, "L": 1}
         ROTATION_MAP = {"T": 0, "R": 1, "D": 2, "L": 3}
+        ORIENTATION_MAP = {0: "D", 1: "L", 2: "T", 3: "R"}
+        
+        # for k in range(4):
+        #         if 0 <= need_to_match[0] + DELTA_Y[k] < self.rows and 0 <= need_to_match[1] + DELTA_X[k] < self.columns:
+        #             if matrix_fixed[need_to_match[0] + DELTA_Y[k], need_to_match[1] + DELTA_X[k]] >= 0:
+        #                 # print("piece", piece)
+        #                 # print("matrix_fixed[need_to_match[0] + DELTA_Y[k], need_to_match[1] + DELTA_X[k]]", matrix_fixed[need_to_match[0] + DELTA_X[k], need_to_match[1] + DELTA_Y[k]])
+        #                 o = ORIENTATION_MAP[k]
+                        
         # ROTATION_MAP = {"T": 3, "R": 2, "D": 1, "L": 0}
         NUM_CONSTRAINTS = 2
         MATCH_REJECTION_THRESHOLD = 1e-5
@@ -828,6 +836,7 @@ class LP(object):
             return pieces
         
         x, y = compute_solution(active_selection, init_weights)
+        
         # print(x, y)
         x_result = []
         y_result = []
@@ -835,25 +844,108 @@ class LP(object):
         matrix_fixed = np.zeros((self.rows, self.columns), dtype=np.int32)
         matrix_fixed -= 1
         piece_duplicated = []
+        
+        # y rows + x columns
         for idx in range(len(x)):
-            if not matrix_fixed[int(x[idx]), int(y[idx])] == -1:
+            if not matrix_fixed[int(y[idx]), int(x[idx])] == -1:
+                # either valid idx or -2
                 print("need to find a empty space")
                 piece_duplicated.append(idx)
-                piece_duplicated.append(matrix_fixed[int(x[idx]), int(y[idx])])
+                piece_duplicated.append(matrix_fixed[int(y[idx]), int(x[idx])])
             else:
-                matrix_fixed[int(x[idx]), int(y[idx])] = idx
-        
-        
+                matrix_fixed[int(y[idx]), int(x[idx])] = idx
         
         
         for i in range(len(x)):
             if i in piece_duplicated:
-                x_result.append(0)
-                y_result.append(0)
+                x_result.append(-1)
+                y_result.append(-1)
             else:
                 x_result.append(x[i])
                 y_result.append(y[i])
+                
+        
+        matrix_fixed = np.zeros((self.rows, self.columns), dtype=np.int32)
+        print("x_result", x_result, y_result)
+        matrix_fixed -= 1
+        for i in range(len(x_result)):
+            if not (x_result[i] == -1 and y_result[i] == -1):
+                matrix_fixed[int(y_result[i]), int(x_result[i])] = i
+            # else:
+            #     matrix_fixed[int(x_result[i]), int(y_result[i])] = -1
+        
+        print("matrix_fixed init", matrix_fixed)
+            
+        def get_maximum_neighbors():
+            result = {}
+            for j in range(self.rows):
+                for i in range(self.columns):
+                    if matrix_fixed[j, i] == -1:
+                        count = 0
+                        for k in range(4):
+                            if 0 <= i + DELTA_X[k] < self.columns and 0 <= j + DELTA_Y[k] < self.rows:
+                                if matrix_fixed[j + DELTA_Y[k], i + DELTA_X[k]] >= 0:
+                                    count += 1
+                        result[(j, i)] = count
+                    # this place is empty
+            sorted_result = dict(sorted(result.items(), key=lambda item: item[1], reverse=True))
+            
+            def custom_sort_key(item):
+                i, j = item[0]
+                middle = abs(self.columns / 2 - i) + abs(self.rows / 2 - j)
+                return middle
+
+            sorted_result = dict(sorted(sorted_result.items(), key=custom_sort_key))
+
+            return sorted_result
+        
+        def try_piece_placement(piece, need_to_match):
+            weight_sum = 0
+            for k in range(4):
+                if 0 <= need_to_match[0] + DELTA_Y[k] < self.rows and 0 <= need_to_match[1] + DELTA_X[k] < self.columns:
+                    if matrix_fixed[need_to_match[0] + DELTA_Y[k], need_to_match[1] + DELTA_X[k]] >= 0:
+                        # print("piece", piece)
+                        # print("matrix_fixed[need_to_match[0] + DELTA_Y[k], need_to_match[1] + DELTA_X[k]]", matrix_fixed[need_to_match[0] + DELTA_X[k], need_to_match[1] + DELTA_Y[k]])
+                        o = ORIENTATION_MAP[k]
+                        weight_sum += weight_ijo[piece][matrix_fixed[need_to_match[0] + DELTA_Y[k], need_to_match[1] + DELTA_X[k]]][o]
+            return weight_sum
+        
+        piece_duplicated = list(set(piece_duplicated))
+        print("piece_duplicated", piece_duplicated)
+        while len(piece_duplicated):
+            neighbors = get_maximum_neighbors()
+            # print("neighbors", neighbors)
+            need_to_match = next(iter(neighbors.keys()))
+            match_result = {}
+            for piece in piece_duplicated:
+                match_result[piece] = try_piece_placement(piece, need_to_match)
+            match_result = dict(sorted(match_result.items(), key=lambda item: item[1]))
+            matched_piece = next(iter(match_result.keys()))
+            # print("match_result", match_result, need_to_match)
+            matrix_fixed[need_to_match[0], need_to_match[1]] = matched_piece
+            # print("matrix_fixed", matrix_fixed)
+            x_result[matched_piece] = need_to_match[1]
+            y_result[matched_piece] = need_to_match[0]
+            print("matched_piece", matched_piece, need_to_match)
+            piece_duplicated.remove(matched_piece)
+            print("piece_duplicated", piece_duplicated)
+            if len(piece_duplicated) == 0:
+                break
+            
+        
         x, y = x_result, y_result
+        print("x", x)
+        print("y", y)
+        
+        # for i in range(len(x)):
+        #     if i in piece_duplicated:
+        #         x_result.append(0)
+        #         y_result.append(0)
+        #     else:
+        #         x_result.append(x[i])
+        #         y_result.append(y[i])
+        # x, y = x_result, y_result
+
         
         # print("piece_duplicated", piece_duplicated)
         
@@ -929,10 +1021,11 @@ class LP(object):
 
         xs = np.array(x, dtype=np.int32)
         ys = np.array(y, dtype=np.int32)
-        
+        print(self.rows, self.columns)
         for piece, (x, y) in zip(self._pieces, zip(xs, ys)):
             sx, sy, dx, dy = x * self._piece_size, y * self._piece_size, (x + 1) * self._piece_size, (y + 1) * self._piece_size
             canvas[sy:dy, sx:dx, :] = piece.image
+            # canvas[sx:dx, sy:dy, :] = piece.image
         return canvas
 
 
@@ -1099,12 +1192,12 @@ import click
 import cv2 as cv
 import numpy as np
 
-puzzle = "puzzle.jpg"
+puzzle = "sspuzzle.jpg"
 
 size = None
 population = 10
 generations = 100
-solution = "solution_lp.jpg"
+solution = "multi-neko-puzzle_lp-change-value.jpg"
 debug = False
 
 input_puzzle = cv.imread(puzzle)
